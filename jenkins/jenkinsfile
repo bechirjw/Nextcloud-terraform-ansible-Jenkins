@@ -21,13 +21,11 @@ pipeline {
     string(name: 'DB_HOST', defaultValue: '127.0.0.1', description: 'Hôte MariaDB')
     string(name: 'DB_PORT', defaultValue: '3306', description: 'Port MariaDB')
     string(name: 'DB_USER', defaultValue: 'nextcloud', description: 'Utilisateur DB pour le ping (ex: nextcloud)')
-    // ⚠️ Les secrets doivent venir de Jenkins Credentials (voir bloc withCredentials)
   }
 
   environment {
-    // pour les retours colorés
-    OK = '\u2705'        // ✅
-    KO = '\u274C'        // ❌
+    OK = '\u2705'         // ✅
+    KO = '\u274C'         // ❌
     WARN = '\u26A0\uFE0F' // ⚠️
   }
 
@@ -39,9 +37,10 @@ pipeline {
           set -e
           which curl >/dev/null 2>&1 || { echo "Installer curl"; exit 1; }
           which jq >/dev/null 2>&1   || { echo "Installer jq"; exit 1; }
-          which mysql >/dev/null 2>&1 || which mariadb >/dev/null 2>&1 || echo "INFO: client MySQL non trouvé (mariadb check utilisera TCP)."
+          which docker >/dev/null 2>&1 || echo "INFO: docker CLI non trouvé (checks conteneurs limités)."
+          which mysql >/dev/null 2>&1 || which mariadb >/dev/null 2>&1 || echo "INFO: client MySQL non trouvé (fallback TCP)."
           which redis-cli >/dev/null 2>&1 || echo "INFO: redis-cli non trouvé (fallback TCP)."
-          which docker >/dev/null 2>&1 || echo "INFO: docker CLI non trouvé (les checks conteneurs seront limités)."
+          which column >/dev/null 2>&1 || echo "INFO: 'column' non trouvé (affichage brut)."
         '''
       }
     }
@@ -52,19 +51,22 @@ pipeline {
         stage('MariaDB') {
           steps {
             script {
-              def ok = sh(returnStatus: true, script: '''
-                set -e
-                if which mysql >/dev/null 2>&1; then client=mysql; elif which mariadb >/dev/null 2>&1; then client=mariadb; else client=""; fi
-                if [ -n "$client" ] && [ -n "$DB_PASS" ]; then
-                  echo "Pinging MariaDB via client..."
-                  echo "SELECT 1;" | $client -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" >/dev/null
-                else
-                  echo "Client ou mot de passe manquant, on tente un TCP check..."
-                  (echo > /dev/tcp/${DB_HOST}/${DB_PORT}) 2>/dev/null
-                fi
-              ''') == 0
-              if (!ok) error("${env.KO} MariaDB KO")
-              echo "${env.OK} MariaDB OK"
+              // DB_PASS depuis un Secret Text Jenkins (credentialsId: 'db-nextcloud-pass')
+              withCredentials([string(credentialsId: 'db-nextcloud-pass', variable: 'DB_PASS')]) {
+                def ok = sh(returnStatus: true, script: '''
+                  set -e
+                  if which mysql >/dev/null 2>&1; then client=mysql; elif which mariadb >/dev/null 2>&1; then client=mariadb; else client=""; fi
+                  if [ -n "$client" ] && [ -n "$DB_PASS" ]; then
+                    echo "Pinging MariaDB via client..."
+                    echo "SELECT 1;" | $client -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" >/dev/null
+                  else
+                    echo "Client ou mot de passe manquant, on tente un TCP check via bash..."
+                    bash -lc 'exec 3<>/dev/tcp/'"${DB_HOST}"'/'"${DB_PORT}"' && exec 3>&-'
+                  fi
+                ''') == 0
+                if (!ok) { error("${env.KO} MariaDB KO") }
+                echo "${env.OK} MariaDB OK"
+              }
             }
           }
         }
@@ -99,10 +101,11 @@ pipeline {
                 if which redis-cli >/dev/null 2>&1; then
                   redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping | grep -q PONG
                 else
-                  (echo > /dev/tcp/${REDIS_HOST}/${REDIS_PORT}) 2>/dev/null
+                  echo "TCP check via bash pour Redis..."
+                  bash -lc 'exec 3<>/dev/tcp/'"${REDIS_HOST}"'/'"${REDIS_PORT}"' && exec 3>&-'
                 fi
               ''') == 0
-              if (!ok) error("${env.KO} Redis KO")
+              if (!ok) { error("${env.KO} Redis KO") }
               echo "${env.OK} Redis OK"
             }
           }
@@ -112,8 +115,8 @@ pipeline {
           steps {
             script {
               def ok = sh(returnStatus: true, script: 'docker info >/dev/null 2>&1') == 0
-              if (!ok) error("${env.KO} Docker KO")
-              sh 'docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" || true'
+              if (!ok) { error("${env.KO} Docker KO") }
+              sh 'docker ps --format "table {{.Names}}\\t{{.Image}}\\t{{.Status}}" || true'
               echo "${env.OK} Docker OK"
             }
           }
@@ -129,8 +132,6 @@ pipeline {
           }
         }
 
-
-
         stage('Node Exporter') {
           steps {
             sh '''
@@ -144,13 +145,13 @@ pipeline {
         stage('Grafana') {
           steps {
             script {
-              // Auth via credentials Jenkins (ID: grafana-admin)
+              // credentialsId: 'grafana-admin' (Username with password)
               withCredentials([usernamePassword(credentialsId: 'grafana-admin', usernameVariable: 'GF_USER', passwordVariable: 'GF_PASS')]) {
                 def st = sh(returnStatus: true, script: '''
                   set -e
                   curl -fsS --max-time 5 -u "${GF_USER}:${GF_PASS}" "http://${HOST}:${GRAFANA_PORT}/api/health" | jq -e '.database=="ok"' >/dev/null
                 ''')
-                if (st != 0) error("${env.KO} Grafana KO (API health)")
+                if (st != 0) { error("${env.KO} Grafana KO (API health)") }
                 echo "${env.OK} Grafana OK (API health)"
               }
             }
@@ -165,8 +166,20 @@ pipeline {
         sh '''
           set -e
           echo "Targets summary:"
-          curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" | jq '.data.activeTargets | length as $n | "Active targets: \($n)"'
-          curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" | jq -r '.data.activeTargets[] | [.labels.job, .health, .discoveredLabels.__address__] | @tsv' | column -t
+
+          # 1) Compter les cibles
+          curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
+            | jq -r '.data.activeTargets | length | "Active targets: " + tostring'
+
+          # 2) Lister job / health / address
+          if which column >/dev/null 2>&1; then
+            curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
+              | jq -r '.data.activeTargets[] | [.labels.job, .health, .discoveredLabels.__address__] | @tsv' \
+              | column -t
+          else
+            curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
+              | jq -r '.data.activeTargets[] | [.labels.job, .health, .discoveredLabels.__address__] | @tsv'
+          fi
         '''
         echo "${OK} Audit Prometheus OK"
       }
@@ -174,7 +187,6 @@ pipeline {
 
     stage('Postinstall checks (sanity)') {
       steps {
-        // Placeholders: mets ici tes vérifs "postinstall" (ports ouverts, users, permissions…)
         sh '''
           echo "Postinstall sanity checks..."
           # Exemple: vérifier que les ports attendus écoutent

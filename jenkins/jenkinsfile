@@ -1,10 +1,9 @@
 pipeline {
   agent any
-    triggers {
+  triggers {
     cron('H/5 * * * *')
     cron('H 9 * * *')
   }
-
   options {
     timestamps()
     disableConcurrentBuilds()
@@ -208,15 +207,50 @@ pipeline {
   } // stages
 
   post {
-    success  { echo "${OK} Supervision OK pour tous les services."
-               slackSend channel: '#jenkins-bot', message: "✅ everything is running today ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-               tokenCredentialId: 'slack-token',
-               teamDomain: 'jenkins-pym1588'
-    unstable { echo "${WARN} Build UNSTABLE : des avertissements ont été détectés." }
-    failure  { echo "${KO} Échec de supervision. Voir les logs des stages en erreur." 
-               slackSend channel: '#jenkins-bot', message: "❌ something is broken ${env.JOB_NAME} #${env.BUILD_NUMBER}" ,
-               tokenCredentialId: 'slack-token',
-               teamDomain: 'jenkins-pym1588'
-    always   { archiveArtifacts artifacts: 'target/**/*.log, **/health-*.txt', allowEmptyArchive: true }
+    success {
+      echo "${OK} Supervision OK pour tous les services."
+      script {
+        // Alerte de succès uniquement pour les runs manuels/5min (le stage 9h gère déjà le daily)
+        if (new Date().format('H') != '09') {
+          try {
+            slackSend(
+              teamDomain: params.SLACK_TEAM_DOMAIN,
+              tokenCredentialId: 'slack-token',
+              channel: params.SLACK_CHANNEL,
+              message: "✅ Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+            )
+          } catch (e) { echo "Slack success notify failed: ${e}" }
+        }
+      }
+    }
+    unstable {
+      echo "${WARN} Build UNSTABLE : des avertissements ont été détectés."
+      script {
+        try {
+          slackSend(
+            teamDomain: params.SLACK_TEAM_DOMAIN,
+            tokenCredentialId: 'slack-token',
+            channel: params.SLACK_CHANNEL,
+            message: "⚠️ Unstable: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+          )
+        } catch (e) { echo "Slack unstable notify failed: ${e}" }
+      }
+    }
+    failure {
+      echo "${KO} Échec de supervision. Voir les logs des stages en erreur."
+      script {
+        try {
+          slackSend(
+            teamDomain: params.SLACK_TEAM_DOMAIN,
+            tokenCredentialId: 'slack-token',
+            channel: params.SLACK_CHANNEL,
+            message: "❌ Failure: ${env.JOB_NAME} #${env.BUILD_NUMBER} — check console!"
+          )
+        } catch (e) { echo "Slack failure notify failed: ${e}" }
+      }
+    }
+    always {
+      archiveArtifacts artifacts: 'target/**/*.log, **/health-*.txt', allowEmptyArchive: true
+    }
   }
 }

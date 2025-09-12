@@ -6,7 +6,7 @@ pipeline {
     disableConcurrentBuilds()
     timeout(time: 20, unit: 'MINUTES')
   }
-
+/*
   parameters {
     string(name: 'TARGET_HOST', defaultValue: '127.0.0.1', description: 'Hôte/VM à tester (IP publique Azure ou 127.0.0.1 depuis la VM)')
     string(name: 'NC_URL', defaultValue: 'http://127.0.0.1', description: 'URL base Nextcloud (sans /status.php)')
@@ -21,13 +21,13 @@ pipeline {
     string(name: 'DB_PORT', defaultValue: '3306', description: 'Port MariaDB')
     string(name: 'DB_USER', defaultValue: 'nextcloud', description: 'Utilisateur DB pour le ping (ex: nextcloud)')
   }
-
+*/
   environment {
     OK   = '\u2705'       // ✅
     KO   = '\u274C'       // ❌
     WARN = '\u26A0\uFE0F' // ⚠️
   }
-
+  
   stages {
 
     stage('Prep: outils présents ?') {

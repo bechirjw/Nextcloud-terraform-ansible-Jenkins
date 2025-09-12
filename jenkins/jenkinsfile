@@ -211,7 +211,7 @@ pipeline {
     success  { echo "${OK} Supervision OK pour tous les services."
                slackSend channel: '#jenkins-bot', message: "✅ everything is running today ${env.JOB_NAME} #${env.BUILD_NUMBER}"
                tokenCredentialId: 'slack-token',
-               teamDomain: 'jenkins-pym1588'}
+               teamDomain: 'jenkins-pym1588'
     unstable { echo "${WARN} Build UNSTABLE : des avertissements ont été détectés." }
     failure  { echo "${KO} Échec de supervision. Voir les logs des stages en erreur." 
                slackSend channel: '#jenkins-bot', message: "❌ something is broken ${env.JOB_NAME} #${env.BUILD_NUMBER}" ,

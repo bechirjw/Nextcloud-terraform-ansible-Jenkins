@@ -130,6 +130,7 @@ pipeline {
         }
 
         stage('Audit rapide des cibles Prometheus') {
+            
         steps {
             sh '''
             set -e

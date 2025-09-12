@@ -1,0 +1,214 @@
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    ansiColor('xterm')
+    disableConcurrentBuilds()
+    timeout(time: 20, unit: 'MINUTES')
+  }
+
+  parameters {
+    string(name: 'HOST', defaultValue: '127.0.0.1', description: 'Hôte/VM à tester (IP publique Azure ou 127.0.0.1 depuis la VM)')
+    string(name: 'NC_URL', defaultValue: 'http://127.0.0.1', description: 'URL base Nextcloud (sans /status.php)')
+    string(name: 'APACHE_PORT', defaultValue: '80', description: 'Port Apache/PHP')
+    string(name: 'PROM_PORT', defaultValue: '9090', description: 'Port Prometheus')
+    string(name: 'NODEEXP_PORT', defaultValue: '9100', description: 'Port Node Exporter')
+    string(name: 'GRAFANA_PORT', defaultValue: '3000', description: 'Port Grafana')
+    string(name: 'JENKINS_PORT', defaultValue: '8081', description: 'Port Jenkins')
+    string(name: 'REDIS_HOST', defaultValue: '127.0.0.1', description: 'Hôte Redis')
+    string(name: 'REDIS_PORT', defaultValue: '6379', description: 'Port Redis')
+    string(name: 'DB_HOST', defaultValue: '127.0.0.1', description: 'Hôte MariaDB')
+    string(name: 'DB_PORT', defaultValue: '3306', description: 'Port MariaDB')
+    string(name: 'DB_USER', defaultValue: 'nextcloud', description: 'Utilisateur DB pour le ping (ex: nextcloud)')
+    // ⚠️ Les secrets doivent venir de Jenkins Credentials (voir bloc withCredentials)
+  }
+
+  environment {
+    // pour les retours colorés
+    OK = '\u2705'        // ✅
+    KO = '\u274C'        // ❌
+    WARN = '\u26A0\uFE0F' // ⚠️
+  }
+
+  stages {
+
+    stage('Prep: outils présents ?') {
+      steps {
+        sh '''
+          set -e
+          which curl >/dev/null 2>&1 || { echo "Installer curl"; exit 1; }
+          which jq >/dev/null 2>&1   || { echo "Installer jq"; exit 1; }
+          which mysql >/dev/null 2>&1 || which mariadb >/dev/null 2>&1 || echo "INFO: client MySQL non trouvé (mariadb check utilisera TCP)."
+          which redis-cli >/dev/null 2>&1 || echo "INFO: redis-cli non trouvé (fallback TCP)."
+          which docker >/dev/null 2>&1 || echo "INFO: docker CLI non trouvé (les checks conteneurs seront limités)."
+        '''
+      }
+    }
+
+    stage('Supervision - Santé des services') {
+      parallel {
+
+        stage('MariaDB') {
+          steps {
+            script {
+              def ok = sh(returnStatus: true, script: '''
+                set -e
+                if which mysql >/dev/null 2>&1; then client=mysql; elif which mariadb >/dev/null 2>&1; then client=mariadb; else client=""; fi
+                if [ -n "$client" ] && [ -n "$DB_PASS" ]; then
+                  echo "Pinging MariaDB via client..."
+                  echo "SELECT 1;" | $client -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" >/dev/null
+                else
+                  echo "Client ou mot de passe manquant, on tente un TCP check..."
+                  (echo > /dev/tcp/${DB_HOST}/${DB_PORT}) 2>/dev/null
+                fi
+              ''') == 0
+              if (!ok) error("${env.KO} MariaDB KO")
+              echo "${env.OK} MariaDB OK"
+            }
+          }
+        }
+
+        stage('PHP/Apache') {
+          steps {
+            sh '''
+              set -e
+              curl -fsS --max-time 5 "http://${HOST}:${APACHE_PORT}/" >/dev/null
+            '''
+            echo "${OK} Apache/PHP OK (HTTP 200)"
+          }
+        }
+
+        stage('Nextcloud status.php') {
+          steps {
+            sh '''
+              set -e
+              RESP=$(curl -fsS --max-time 5 "${NC_URL}/status.php" | jq '.installed, .maintenance, .version' -r || true)
+              echo "Nextcloud status: ${RESP}"
+              curl -fsS --max-time 5 "${NC_URL}/status.php" | jq -e '.installed==true and .maintenance==false' >/dev/null
+            '''
+            echo "${OK} Nextcloud OK (installed=true, maintenance=false)"
+          }
+        }
+
+        stage('Redis') {
+          steps {
+            script {
+              def ok = sh(returnStatus: true, script: '''
+                set -e
+                if which redis-cli >/dev/null 2>&1; then
+                  redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" ping | grep -q PONG
+                else
+                  (echo > /dev/tcp/${REDIS_HOST}/${REDIS_PORT}) 2>/dev/null
+                fi
+              ''') == 0
+              if (!ok) error("${env.KO} Redis KO")
+              echo "${env.OK} Redis OK"
+            }
+          }
+        }
+
+        stage('Docker Daemon') {
+          steps {
+            script {
+              def ok = sh(returnStatus: true, script: 'docker info >/dev/null 2>&1') == 0
+              if (!ok) error("${env.KO} Docker KO")
+              sh 'docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" || true'
+              echo "${env.OK} Docker OK"
+            }
+          }
+        }
+
+        stage('Jenkins (auto-check)') {
+          steps {
+            sh '''
+              set -e
+              curl -fsS --max-time 5 "http://${HOST}:${JENKINS_PORT}/login" >/dev/null
+            '''
+            echo "${OK} Jenkins UI OK"
+          }
+        }
+
+        stage('Prometheus') {
+          steps {
+            sh '''
+              set -e
+              curl -fsS --max-time 5 "http://127.0.0.1:${PROM_PORT}/-/ready" | grep -q "Ready" || {
+                echo "Prometheus not Ready"
+                exit 1
+              }
+            '''
+            echo "${OK} Prometheus Ready"
+          }
+        }
+
+        stage('Node Exporter') {
+          steps {
+            sh '''
+              set -e
+              curl -fsS --max-time 5 "http://127.0.0.1:${NODEEXP_PORT}/metrics" | head -5
+            '''
+            echo "${OK} Node Exporter expose les métriques"
+          }
+        }
+
+        stage('Grafana') {
+          steps {
+            script {
+              // Auth via credentials Jenkins (ID: grafana-admin)
+              withCredentials([usernamePassword(credentialsId: 'grafana-admin', usernameVariable: 'GF_USER', passwordVariable: 'GF_PASS')]) {
+                def st = sh(returnStatus: true, script: '''
+                  set -e
+                  curl -fsS --max-time 5 -u "${GF_USER}:${GF_PASS}" "http://${HOST}:${GRAFANA_PORT}/api/health" | jq -e '.database=="ok"' >/dev/null
+                ''')
+                if (st != 0) error("${env.KO} Grafana KO (API health)")
+                echo "${env.OK} Grafana OK (API health)"
+              }
+            }
+          }
+        }
+
+      } // parallel
+    }
+
+    stage('Audit rapide des cibles Prometheus') {
+      steps {
+        sh '''
+          set -e
+          echo "Targets summary:"
+          curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" | jq '.data.activeTargets | length as $n | "Active targets: \($n)"'
+          curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" | jq -r '.data.activeTargets[] | [.labels.job, .health, .discoveredLabels.__address__] | @tsv' | column -t
+        '''
+        echo "${OK} Audit Prometheus OK"
+      }
+    }
+
+    stage('Postinstall checks (sanity)') {
+      steps {
+        // Placeholders: mets ici tes vérifs "postinstall" (ports ouverts, users, permissions…)
+        sh '''
+          echo "Postinstall sanity checks..."
+          # Exemple: vérifier que les ports attendus écoutent
+          ss -lntp | grep -E ":(${APACHE_PORT}|${PROM_PORT}|${NODEEXP_PORT}|${GRAFANA_PORT}|${JENKINS_PORT})" || true
+        '''
+        echo "${OK} Postinstall checks terminés"
+      }
+    }
+
+  } // stages
+
+  post {
+    success {
+      echo "${OK} Supervision OK pour tous les services."
+    }
+    unstable {
+      echo "${WARN} Build UNSTABLE : des avertissements ont été détectés."
+    }
+    failure {
+      echo "${KO} Échec de supervision. Voir les logs des stages en erreur."
+    }
+    always {
+      archiveArtifacts artifacts: 'target/**/*.log, **/health-*.txt', allowEmptyArchive: true
+    }
+  }
+}

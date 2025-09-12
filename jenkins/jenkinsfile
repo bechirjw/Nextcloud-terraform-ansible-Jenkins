@@ -136,19 +136,17 @@ pipeline {
             echo "Targets summary:"
 
             # 1) Compter les cibles
-            COUNT=$(curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
-                | jq '.data.activeTargets | length')
-            echo "Active targets: ${COUNT}"
+            curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
+                | jq -r '.data.activeTargets | length | "Active targets: " + tostring'
 
             # 2) Lister job / health / address
             curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
                 | jq -r '.data.activeTargets[] | [.labels.job, .health, .discoveredLabels.__address__] | @tsv' \
                 | column -t || true
             '''
+            echo "${OK} Audit Prometheus OK"
         }
         }
-
-
 
         stage('Node Exporter') {
           steps {

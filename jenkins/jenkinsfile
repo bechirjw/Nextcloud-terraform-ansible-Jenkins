@@ -3,8 +3,6 @@ pipeline {
 
   options {
     timestamps()
-    // Use wrap() to enable ANSI colors even if ansiColor option isn't available
-    wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm'])
     disableConcurrentBuilds()
     timeout(time: 20, unit: 'MINUTES')
   }
@@ -52,7 +50,7 @@ pipeline {
         stage('MariaDB') {
           steps {
             script {
-              // DB_PASS depuis un Secret Text Jenkins (credentialsId: 'db-nextcloud-pass')
+              // Attends un Secret Text Jenkins avec ID: db-nextcloud-pass
               withCredentials([string(credentialsId: 'db-nextcloud-pass', variable: 'DB_PASS')]) {
                 def ok = sh(returnStatus: true, script: '''
                   set -e
@@ -61,7 +59,7 @@ pipeline {
                     echo "Pinging MariaDB via client..."
                     echo "SELECT 1;" | $client -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" >/dev/null
                   else
-                    echo "Client ou mot de passe manquant, on tente un TCP check via bash..."
+                    echo "Client ou mot de passe manquant, TCP check via bash..."
                     bash -lc 'exec 3<>/dev/tcp/'"${DB_HOST}"'/'"${DB_PORT}"' && exec 3>&-'
                   fi
                 ''') == 0
@@ -146,7 +144,7 @@ pipeline {
         stage('Grafana') {
           steps {
             script {
-              // credentialsId: 'grafana-admin' (Username with password)
+              // Attends un credential "Username with password" ID: grafana-admin
               withCredentials([usernamePassword(credentialsId: 'grafana-admin', usernameVariable: 'GF_USER', passwordVariable: 'GF_PASS')]) {
                 def st = sh(returnStatus: true, script: '''
                   set -e

@@ -1,8 +1,10 @@
 pipeline {
   agent any
-  triggers {
-    cron('H/5 * * * *\nH 9 * * *')
-  }
+triggers {
+  cron('''H/5 * * * *
+H 9 * * *''')
+}
+
   options {
     timestamps()
     disableConcurrentBuilds()
@@ -199,53 +201,63 @@ pipeline {
         echo "${OK} Postinstall checks terminés"
       }
     }
-        // ☀️ Rapport quotidien Slack — ne tourne QUE sur le déclenchement cron
+     stage('Test Slack webhook now') {
+      steps {
+        withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
+          sh '''
+            set -e
+            # Petit test de connectivité Internet/Slack
+            curl -sS https://slack.com/api/api.test >/dev/null
+
+            # Envoi + affichage de la réponse HTTP pour debug
+            payload=$(jq -nc --arg t ":rocket: Test webhook depuis ${JOB_NAME} #${BUILD_NUMBER}" \
+                           '{text:$t}')
+            curl -sS -X POST -H 'Content-type: application/json' \
+                 -d "$payload" "$SLACK_URL" \
+                 -D /tmp/slack.hdr -o /tmp/slack.out
+            echo "---- Slack headers ----"
+            cat /tmp/slack.hdr
+            echo "---- Slack body ----"
+            cat /tmp/slack.out
+          '''
+        }
+      }
+    }
+
     stage('Daily Report') {
-      when { triggeredBy 'TimerTrigger' } // build lancé par cron()
+      when { triggeredBy 'TimerTrigger' }   // ne tourne que sur déclenchement cron
       steps {
-        slackSend channel: '#jenkins-bot',
-                  message: "☀️ Daily Check: All systems are running fine! (${env.JOB_NAME} #${env.BUILD_NUMBER})"
+        withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
+          sh '''
+            set -e
+            payload=$(jq -nc --arg t "☀️ Daily Check: ${JOB_NAME} #${BUILD_NUMBER}" '{text:$t}')
+            curl -sS -X POST -H 'Content-type: application/json' \
+                 -d "$payload" "$SLACK_URL"
+          '''
+        }
       }
     }
-
-     stage('Test Slack') {
-      steps {
-        slackSend(
-          teamDomain: '',          // juste le sous-domaine Slack
-          tokenCredentialId: 'slack-token',    // Secret Text Jenkins avec ton xoxb-...
-          channel: '#jenkins-bot',
-          message: ':rocket: Test Slack depuis Jenkins'
-        )
-      }
-    }
-
+  }
   } // stages
-post {
-  success {
-    withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
-      sh '''
-        set -e
-        payload=$(cat <<'JSON'
-{"text":"✅ Jenkins SUCCESS: *'"${JOB_NAME}"'* #'"${BUILD_NUMBER}"'"}
-JSON
-)
-        curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_URL"
-      '''
+
+  post {
+    success {
+      withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
+        sh '''
+          set -e
+          payload=$(jq -nc --arg t "✅ SUCCESS: ${JOB_NAME} #${BUILD_NUMBER}" '{text:$t}')
+          curl -sS -X POST -H 'Content-type: application/json' -d "$payload" "$SLACK_URL"
+        '''
+      }
+    }
+    failure {
+      withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
+        sh '''
+          set -e
+          payload=$(jq -nc --arg t "❌ FAILURE: ${JOB_NAME} #${BUILD_NUMBER} — check console" '{text:$t}')
+          curl -sS -X POST -H 'Content-type: application/json' -d "$payload" "$SLACK_URL"
+        '''
+      }
     }
   }
-  failure {
-    withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
-      sh '''
-        set -e
-        payload=$(cat <<'JSON'
-{"text":"❌ Jenkins FAILURE: *'"${JOB_NAME}"'* #'"${BUILD_NUMBER}"' — check console logs"}
-JSON
-)
-        curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_URL"
-      '''
-    }
-  }
-}
-
-
-}
+  } // pipeline   

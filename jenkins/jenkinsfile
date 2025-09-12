@@ -1,12 +1,15 @@
 pipeline {
   agent any
+`   triggers {
+    cron('H 9 * * *')
+  }
 
   options {
     timestamps()
     disableConcurrentBuilds()
     timeout(time: 20, unit: 'MINUTES')
   }
-
+  
   environment {
     OK   = '\u2705'       // ✅
     KO   = '\u274C'       // ❌
@@ -177,6 +180,14 @@ pipeline {
           ss -lntp | grep -E ":(${APACHE_PORT}|${PROM_PORT}|${NODEEXP_PORT}|${GRAFANA_PORT}|${JENKINS_PORT})" || true
         '''
         echo "${OK} Postinstall checks terminés"
+      }
+    }
+        // ☀️ Rapport quotidien Slack — ne tourne QUE sur le déclenchement cron
+    stage('Daily Report') {
+      when { triggeredBy 'TimerTrigger' } // build lancé par cron()
+      steps {
+        slackSend channel: '#jenkins-bot',
+                  message: "☀️ Daily Check: All systems are running fine! (${env.JOB_NAME} #${env.BUILD_NUMBER})"
       }
     }
 

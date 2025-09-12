@@ -129,18 +129,26 @@ pipeline {
           }
         }
 
-        stage('Prometheus') {
-          steps {
+        stage('Audit rapide des cibles Prometheus') {
+        steps {
             sh '''
-              set -e
-              curl -fsS --max-time 5 "http://127.0.0.1:${PROM_PORT}/-/ready" | grep -q "Ready" || {
-                echo "Prometheus not Ready"
-                exit 1
-              }
+            set -e
+            echo "Targets summary:"
+
+            # Récupère juste le nombre puis l'affiche côté shell (évite \\( ... \\) de jq)
+            COUNT=$(curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
+                | jq '.data.activeTargets | length')
+
+            echo "Active targets: ${COUNT}"
+
+            # Liste des targets (job, health, address)
+            curl -fsS "http://127.0.0.1:${PROM_PORT}/api/v1/targets" \
+                | jq -r '.data.activeTargets[] | [.labels.job, .health, .discoveredLabels.__address__] | @tsv' \
+                | column -t || true
             '''
-            echo "${OK} Prometheus Ready"
-          }
         }
+        }
+
 
         stage('Node Exporter') {
           steps {

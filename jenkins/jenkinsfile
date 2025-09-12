@@ -238,7 +238,7 @@ H 9 * * *''')
       }
     }
   }
-  } // stages
+   // stages
 
   post {
     success {
@@ -260,4 +260,4 @@ H 9 * * *''')
       }
     }
   }
-// pipeline   
+}// pipeline   

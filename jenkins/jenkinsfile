@@ -125,7 +125,7 @@ pipeline {
           steps {
             sh '''
               set -e
-              curl -fsS --max-time 5 "http://${TARGET_HOST}:${JENKINS_PORT}/login" >/dev/null
+              curl -fsS --max-time 5 "http://4.233.96.230:8080/login" >/dev/null
             '''
             echo "${OK} Jenkins UI OK"
           }

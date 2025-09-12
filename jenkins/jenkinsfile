@@ -8,7 +8,7 @@ pipeline {
   }
 
   parameters {
-    string(name: 'HOST', defaultValue: '127.0.0.1', description: 'Hôte/VM à tester (IP publique Azure ou 127.0.0.1 depuis la VM)')
+    string(name: 'TARGET_HOST', defaultValue: '127.0.0.1', description: 'Hôte/VM à tester (IP publique Azure ou 127.0.0.1 depuis la VM)')
     string(name: 'NC_URL', defaultValue: 'http://127.0.0.1', description: 'URL base Nextcloud (sans /status.php)')
     string(name: 'APACHE_PORT', defaultValue: '80', description: 'Port Apache/PHP')
     string(name: 'PROM_PORT', defaultValue: '9090', description: 'Port Prometheus')
@@ -74,7 +74,7 @@ pipeline {
           steps {
             sh '''
               set -e
-              curl -fsS --max-time 5 "http://${HOST}:${APACHE_PORT}/" >/dev/null
+              curl -fsS --max-time 5 "http://${TARGET_HOST}:${APACHE_PORT}/" >/dev/null
             '''
             echo "${OK} Apache/PHP OK (HTTP 200)"
           }
@@ -125,7 +125,7 @@ pipeline {
           steps {
             sh '''
               set -e
-              curl -fsS --max-time 5 "http://${HOST}:${JENKINS_PORT}/login" >/dev/null
+              curl -fsS --max-time 5 "http://${TARGET_HOST}:${JENKINS_PORT}/login" >/dev/null
             '''
             echo "${OK} Jenkins UI OK"
           }
@@ -148,7 +148,7 @@ pipeline {
               withCredentials([usernamePassword(credentialsId: 'grafana-admin', usernameVariable: 'GF_USER', passwordVariable: 'GF_PASS')]) {
                 def st = sh(returnStatus: true, script: '''
                   set -e
-                  curl -fsS --max-time 5 -u "${GF_USER}:${GF_PASS}" "http://${HOST}:${GRAFANA_PORT}/api/health" | jq -e '.database=="ok"' >/dev/null
+                  curl -fsS --max-time 5 -u "${GF_USER}:${GF_PASS}" "http://${TARGET_HOST}:${GRAFANA_PORT}/api/health" | jq -e '.database=="ok"' >/dev/null
                 ''')
                 if (st != 0) error("${env.KO} Grafana KO (API health)")
                 echo "${env.OK} Grafana OK (API health)"

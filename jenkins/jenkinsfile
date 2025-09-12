@@ -1,8 +1,7 @@
 pipeline {
   agent any
   triggers {
-    cron('H/5 * * * *')
-    cron('H 9 * * *')
+    cron('H/5 * * * *\nH 9 * * *')
   }
   options {
     timestamps()

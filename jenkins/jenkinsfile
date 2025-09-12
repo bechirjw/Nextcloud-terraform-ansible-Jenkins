@@ -44,31 +44,31 @@ pipeline {
       }
     }
 
-    stage('Supervision - Santé des services') {
-      parallel {
+        stage('Supervision - Santé des services') {
+          parallel {
 
-        stage('MariaDB') {
-          steps {
-            script {
-              // Attends un Secret Text Jenkins avec ID: db-nextcloud-pass
-              withCredentials([string(credentialsId: 'db-nextcloud-pass', variable: 'DB_PASS')]) {
-                def ok = sh(returnStatus: true, script: '''
-                  set -e
-                  if which mysql >/dev/null 2>&1; then client=mysql; elif which mariadb >/dev/null 2>&1; then client=mariadb; else client=""; fi
-                  if [ -n "$client" ] && [ -n "$DB_PASS" ]; then
-                    echo "Pinging MariaDB via client..."
-                    echo "SELECT 1;" | $client -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" >/dev/null
-                  else
-                    echo "Client ou mot de passe manquant, TCP check via bash..."
-                    bash -lc 'exec 3<>/dev/tcp/'"127.0.0.1"'/'"3306"' && exec 3>&-'
-                  fi
-                ''') == 0
-                if (!ok) error("${env.KO} MariaDB KO")
-                echo "${env.OK} MariaDB OK"
+            stage('MariaDB') {
+              steps {
+                script {
+                  // Attends un Secret Text Jenkins avec ID: db-nextcloud-pass
+                  withCredentials([string(credentialsId: 'db-nextcloud-pass', variable: 'DB_PASS')]) {
+                    def ok = sh(returnStatus: true, script: '''
+                      set -e
+                      if which mysql >/dev/null 2>&1; then client=mysql; elif which mariadb >/dev/null 2>&1; then client=mariadb; else client=""; fi
+                      if [ -n "$client" ] && [ -n "$DB_PASS" ]; then
+                        echo "Pinging MariaDB via client..."
+                        echo "SELECT 1;" | $client -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" >/dev/null
+                      else
+                        echo "Client ou mot de passe manquant, TCP check via bash..."
+                        bash -lc 'exec 3<>/dev/tcp/'"127.0.0.1"'/'"3306"' && exec 3>&-'
+                      fi
+                    ''') == 0
+                    if (!ok) error("${env.KO} MariaDB KO")
+                    echo "${env.OK} MariaDB OK"
+                  }
+                }
               }
             }
-          }
-        }
 
         stage('PHP/Apache') {
           steps {

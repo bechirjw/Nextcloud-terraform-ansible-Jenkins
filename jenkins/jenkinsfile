@@ -208,50 +208,44 @@ pipeline {
       }
     }
 
-  } // stages
+     stage('Test Slack') {
+      steps {
+        slackSend(
+          teamDomain: '',          // juste le sous-domaine Slack
+          tokenCredentialId: 'slack-token',    // Secret Text Jenkins avec ton xoxb-...
+          channel: '#jenkins-bot',
+          message: ':rocket: Test Slack depuis Jenkins'
+        )
+      }
+    }
 
-  post {
-    success {
-      echo "${OK} Supervision OK pour tous les services."
-      script {
-        try {
-          slackSend(
-            teamDomain: params.SLACK_TEAM_DOMAIN,
-            tokenCredentialId: 'slack-token',
-            channel: params.SLACK_CHANNEL,
-            message: "✅ Success: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-          )
-        } catch (e) { echo "Slack success notify failed: ${e}" }
-      }
-    }
-    unstable {
-      echo "${WARN} Build UNSTABLE : des avertissements ont été détectés."
-      script {
-        try {
-          slackSend(
-            teamDomain: params.SLACK_TEAM_DOMAIN,
-            tokenCredentialId: 'slack-token',
-            channel: params.SLACK_CHANNEL,
-            message: "⚠️ Unstable: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-          )
-        } catch (e) { echo "Slack unstable notify failed: ${e}" }
-      }
-    }
-    failure {
-      echo "${KO} Échec de supervision. Voir les logs des stages en erreur."
-      script {
-        try {
-          slackSend(
-            teamDomain: params.SLACK_TEAM_DOMAIN,
-            tokenCredentialId: 'slack-token',
-            channel: params.SLACK_CHANNEL,
-            message: "❌ Failure: ${env.JOB_NAME} #${env.BUILD_NUMBER} — check console!"
-          )
-        } catch (e) { echo "Slack failure notify failed: ${e}" }
-      }
-    }
-    always {
-      archiveArtifacts artifacts: 'target/**/*.log, **/health-*.txt', allowEmptyArchive: true
+  } // stages
+post {
+  success {
+    withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
+      sh '''
+        set -e
+        payload=$(cat <<'JSON'
+{"text":"✅ Jenkins SUCCESS: *'"${JOB_NAME}"'* #'"${BUILD_NUMBER}"'"}
+JSON
+)
+        curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_URL"
+      '''
     }
   }
+  failure {
+    withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
+      sh '''
+        set -e
+        payload=$(cat <<'JSON'
+{"text":"❌ Jenkins FAILURE: *'"${JOB_NAME}"'* #'"${BUILD_NUMBER}"' — check console logs"}
+JSON
+)
+        curl -sS -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_URL"
+      '''
+    }
+  }
+}
+
+
 }

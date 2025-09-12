@@ -6,22 +6,7 @@ pipeline {
     disableConcurrentBuilds()
     timeout(time: 20, unit: 'MINUTES')
   }
-/*
-  parameters {
-    string(name: 'TARGET_HOST', defaultValue: '127.0.0.1', description: 'Hôte/VM à tester (IP publique Azure ou 127.0.0.1 depuis la VM)')
-    string(name: 'NC_URL', defaultValue: 'http://127.0.0.1', description: 'URL base Nextcloud (sans /status.php)')
-    string(name: 'APACHE_PORT', defaultValue: '80', description: 'Port Apache/PHP')
-    string(name: 'PROM_PORT', defaultValue: '9090', description: 'Port Prometheus')
-    string(name: 'NODEEXP_PORT', defaultValue: '9100', description: 'Port Node Exporter')
-    string(name: 'GRAFANA_PORT', defaultValue: '3000', description: 'Port Grafana')
-    string(name: 'JENKINS_PORT', defaultValue: '8081', description: 'Port Jenkins')
-    string(name: 'REDIS_HOST', defaultValue: '127.0.0.1', description: 'Hôte Redis')
-    string(name: 'REDIS_PORT', defaultValue: '6379', description: 'Port Redis')
-    string(name: 'DB_HOST', defaultValue: '127.0.0.1', description: 'Hôte MariaDB')
-    string(name: 'DB_PORT', defaultValue: '3306', description: 'Port MariaDB')
-    string(name: 'DB_USER', defaultValue: 'nextcloud', description: 'Utilisateur DB pour le ping (ex: nextcloud)')
-  }
-*/
+
   environment {
     OK   = '\u2705'       // ✅
     KO   = '\u274C'       // ❌

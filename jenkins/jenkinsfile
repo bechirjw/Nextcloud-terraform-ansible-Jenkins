@@ -60,7 +60,7 @@ pipeline {
                     echo "SELECT 1;" | $client -h "${DB_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" >/dev/null
                   else
                     echo "Client ou mot de passe manquant, TCP check via bash..."
-                    bash -lc 'exec 3<>/dev/tcp/'"${DB_HOST}"'/'"${DB_PORT}"' && exec 3>&-'
+                    bash -lc 'exec 3<>/dev/tcp/'"127.0.0.1"'/'"3306"' && exec 3>&-'
                   fi
                 ''') == 0
                 if (!ok) error("${env.KO} MariaDB KO")
@@ -148,7 +148,7 @@ pipeline {
               withCredentials([usernamePassword(credentialsId: 'grafana-admin', usernameVariable: 'GF_USER', passwordVariable: 'GF_PASS')]) {
                 def st = sh(returnStatus: true, script: '''
                   set -e
-                  curl -fsS --max-time 5 -u "${GF_USER}:${GF_PASS}" "http://${TARGET_HOST}:${GRAFANA_PORT}/api/health" | jq -e '.database=="ok"' >/dev/null
+                  curl -fsS --max-time 5 -u "${GF_USER}:${GF_PASS}" "http://127.0.0.1:${GRAFANA_PORT}/api/health" | jq -e '.database=="ok"' >/dev/null
                 ''')
                 if (st != 0) error("${env.KO} Grafana KO (API health)")
                 echo "${env.OK} Grafana OK (API health)"

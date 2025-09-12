@@ -3,7 +3,8 @@ pipeline {
 
   options {
     timestamps()
-    ansiColor('xterm')
+    // Use wrap() to enable ANSI colors even if ansiColor option isn't available
+    wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm'])
     disableConcurrentBuilds()
     timeout(time: 20, unit: 'MINUTES')
   }
@@ -24,8 +25,8 @@ pipeline {
   }
 
   environment {
-    OK = '\u2705'         // ✅
-    KO = '\u274C'         // ❌
+    OK   = '\u2705'       // ✅
+    KO   = '\u274C'       // ❌
     WARN = '\u26A0\uFE0F' // ⚠️
   }
 
@@ -36,9 +37,9 @@ pipeline {
         sh '''
           set -e
           which curl >/dev/null 2>&1 || { echo "Installer curl"; exit 1; }
-          which jq >/dev/null 2>&1   || { echo "Installer jq"; exit 1; }
+          which jq   >/dev/null 2>&1 || { echo "Installer jq"; exit 1; }
           which docker >/dev/null 2>&1 || echo "INFO: docker CLI non trouvé (checks conteneurs limités)."
-          which mysql >/dev/null 2>&1 || which mariadb >/dev/null 2>&1 || echo "INFO: client MySQL non trouvé (fallback TCP)."
+          which mysql   >/dev/null 2>&1 || which mariadb >/dev/null 2>&1 || echo "INFO: client MySQL non trouvé (fallback TCP)."
           which redis-cli >/dev/null 2>&1 || echo "INFO: redis-cli non trouvé (fallback TCP)."
           which column >/dev/null 2>&1 || echo "INFO: 'column' non trouvé (affichage brut)."
         '''
@@ -64,7 +65,7 @@ pipeline {
                     bash -lc 'exec 3<>/dev/tcp/'"${DB_HOST}"'/'"${DB_PORT}"' && exec 3>&-'
                   fi
                 ''') == 0
-                if (!ok) { error("${env.KO} MariaDB KO") }
+                if (!ok) error("${env.KO} MariaDB KO")
                 echo "${env.OK} MariaDB OK"
               }
             }
@@ -105,7 +106,7 @@ pipeline {
                   bash -lc 'exec 3<>/dev/tcp/'"${REDIS_HOST}"'/'"${REDIS_PORT}"' && exec 3>&-'
                 fi
               ''') == 0
-              if (!ok) { error("${env.KO} Redis KO") }
+              if (!ok) error("${env.KO} Redis KO")
               echo "${env.OK} Redis OK"
             }
           }
@@ -115,7 +116,7 @@ pipeline {
           steps {
             script {
               def ok = sh(returnStatus: true, script: 'docker info >/dev/null 2>&1') == 0
-              if (!ok) { error("${env.KO} Docker KO") }
+              if (!ok) error("${env.KO} Docker KO")
               sh 'docker ps --format "table {{.Names}}\\t{{.Image}}\\t{{.Status}}" || true'
               echo "${env.OK} Docker OK"
             }
@@ -151,7 +152,7 @@ pipeline {
                   set -e
                   curl -fsS --max-time 5 -u "${GF_USER}:${GF_PASS}" "http://${HOST}:${GRAFANA_PORT}/api/health" | jq -e '.database=="ok"' >/dev/null
                 ''')
-                if (st != 0) { error("${env.KO} Grafana KO (API health)") }
+                if (st != 0) error("${env.KO} Grafana KO (API health)")
                 echo "${env.OK} Grafana OK (API health)"
               }
             }
@@ -199,17 +200,9 @@ pipeline {
   } // stages
 
   post {
-    success {
-      echo "${OK} Supervision OK pour tous les services."
-    }
-    unstable {
-      echo "${WARN} Build UNSTABLE : des avertissements ont été détectés."
-    }
-    failure {
-      echo "${KO} Échec de supervision. Voir les logs des stages en erreur."
-    }
-    always {
-      archiveArtifacts artifacts: 'target/**/*.log, **/health-*.txt', allowEmptyArchive: true
-    }
+    success  { echo "${OK} Supervision OK pour tous les services." }
+    unstable { echo "${WARN} Build UNSTABLE : des avertissements ont été détectés." }
+    failure  { echo "${KO} Échec de supervision. Voir les logs des stages en erreur." }
+    always   { archiveArtifacts artifacts: 'target/**/*.log, **/health-*.txt', allowEmptyArchive: true }
   }
 }

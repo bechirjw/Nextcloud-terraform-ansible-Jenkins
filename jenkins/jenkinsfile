@@ -135,7 +135,7 @@ pipeline {
           steps {
             sh '''
               set -e
-              curl -fsS --max-time 5 "http://127.0.0.1:${NODEEXP_PORT}/metrics" | head -5
+              curl -fsS --max-time 5 "http://127.0.0.1:9100/metrics" | head -5
             '''
             echo "${OK} Node Exporter expose les métriques"
           }

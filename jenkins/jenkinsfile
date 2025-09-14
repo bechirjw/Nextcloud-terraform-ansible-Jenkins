@@ -201,6 +201,47 @@ H 9 * * *''')
         echo "${OK} Postinstall checks terminés"
       }
     }
+stage('Trivy FS (Nextcloud)') {
+  environment {
+    NC_DIR        = '/var/www/nextcloud'         // chemin Nextcloud à scanner
+    TRIVY_CACHE   = "${WORKSPACE}/.trivy-cache"  // cache local pour accélérer
+    REPORT_DIR    = "${WORKSPACE}/trivy-reports"
+  }
+  steps {
+    sh '''
+      set -eux
+
+      # Assure les dossiers
+      mkdir -p "$TRIVY_CACHE" "$REPORT_DIR"
+
+     
+
+      # Scan lisible (table)
+      sudo trivy fs \
+        --cache-dir "$TRIVY_CACHE" \
+        --scanners vuln,secret,misconfig,license \
+        --severity CRITICAL,HIGH \
+        --ignore-unfixed \
+        --format table \
+        "$NC_DIR" | tee "$REPORT_DIR/nextcloud-trivy.txt"
+
+      # Scan JSON (pour post-traitement)
+      sudo trivy fs \
+        --cache-dir "$TRIVY_CACHE" \
+        --scanners vuln,secret,misconfig,license \
+        --severity CRITICAL,HIGH \
+        --ignore-unfixed \
+        --format json \
+        --output "$REPORT_DIR/nextcloud-trivy.json" \
+        "$NC_DIR"
+    '''
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'trivy-reports/nextcloud-trivy.*', fingerprint: true
+    }
+  }
+}
 
   }
    // stages

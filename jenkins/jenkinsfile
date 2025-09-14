@@ -220,7 +220,7 @@ post {
 
           if [ "$LAST_OK" != "$TODAY" ]; then
             # 👉 Première réussite de la journée: on notifie et on enregistre la date
-            payload=$(jq -nc --arg t "✅ Tout va bien aujourd'hui : ${JOB_NAME} #${BUILD_NUMBER}" '{text:$t}')
+            payload=$(jq -nc --arg t "✅ all is good for today : ${JOB_NAME} #${BUILD_NUMBER}" '{text:$t}')
             curl -sS -X POST -H 'Content-type: application/json' -d "$payload" "$SLACK_URL"
             echo "$TODAY" > "$FILE"
           else
@@ -234,7 +234,7 @@ post {
         sh '''
           set -e
           # ⚠️ On notifie à CHAQUE échec
-          payload=$(jq -nc --arg t "❌ ÉCHEC: ${JOB_NAME} #${BUILD_NUMBER} — vérifiez la console Jenkins" '{text:$t}')
+          payload=$(jq -nc --arg t "❌ ÉCHEC: ${JOB_NAME} #${BUILD_NUMBER} — oops failure check Jenkins logs" '{text:$t}')
           curl -sS -X POST -H 'Content-type: application/json' -d "$payload" "$SLACK_URL"
         '''
       }

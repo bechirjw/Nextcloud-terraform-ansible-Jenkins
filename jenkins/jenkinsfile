@@ -1,9 +1,6 @@
 pipeline {
   agent any
-triggers {
-  cron('''H/5 * * * *
-H 9 * * *''')
-}
+
 
   options {
     timestamps()
@@ -201,6 +198,41 @@ H 9 * * *''')
         echo "${OK} Postinstall checks terminés"
       }
     }
+stage('Trivy FS (Nextcloud)') {
+  environment {
+    NC_DIR      = '/var/www/nextcloud'
+    TRIVY_CACHE = "${WORKSPACE}/.trivy-cache"
+    REPORT_DIR  = "${WORKSPACE}/trivy-reports"
+  }
+  steps {
+    sh '''
+      set -eux
+      mkdir -p "$TRIVY_CACHE" "$REPORT_DIR"
+
+      trivy fs \
+        --cache-dir "$TRIVY_CACHE" \
+        --scanners vuln,secret,misconfig,license \
+        --severity CRITICAL,HIGH \
+        --ignore-unfixed \
+        --format table \
+        "$NC_DIR" | tee "$REPORT_DIR/nextcloud-trivy.txt"
+
+      trivy fs \
+        --cache-dir "$TRIVY_CACHE" \
+        --scanners vuln,secret,misconfig,license \
+        --severity CRITICAL,HIGH \
+        --ignore-unfixed \
+        --format json \
+        --output "$REPORT_DIR/nextcloud-trivy.json" \
+        "$NC_DIR"
+    '''
+  }
+  post {
+    always {
+      archiveArtifacts artifacts: 'trivy-reports/nextcloud-trivy.*', fingerprint: true
+    }
+  }
+}
 
   }
    // stages

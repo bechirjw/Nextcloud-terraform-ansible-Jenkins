@@ -214,25 +214,22 @@ stage('Trivy FS (Nextcloud)') {
         --scanners vuln,secret,misconfig,license \
         --severity CRITICAL,HIGH \
         --ignore-unfixed \
-        --format table \
-        "$NC_DIR" | tee "$REPORT_DIR/nextcloud-trivy.txt"
-
-      trivy fs \
-        --cache-dir "$TRIVY_CACHE" \
-        --scanners vuln,secret,misconfig,license \
-        --severity CRITICAL,HIGH \
-        --ignore-unfixed \
-        --format json \
-        --output "$REPORT_DIR/nextcloud-trivy.json" \
+        --format sarif \
+        --output "$REPORT_DIR/nextcloud-trivy.sarif" \
         "$NC_DIR"
     '''
+
+    
+    // Lecture du rapport SARIF par Warnings NG
+    recordIssues tools: [sarif(pattern: 'trivy-reports/nextcloud-trivy.sarif')]
   }
   post {
     always {
-      archiveArtifacts artifacts: 'trivy-reports/nextcloud-trivy.*', fingerprint: true
+      archiveArtifacts artifacts: 'trivy-reports/nextcloud-trivy.sarif', fingerprint: true
     }
   }
 }
+
 
   }
    // stages

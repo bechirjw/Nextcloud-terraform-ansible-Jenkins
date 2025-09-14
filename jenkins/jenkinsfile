@@ -201,52 +201,31 @@ H 9 * * *''')
         echo "${OK} Postinstall checks terminés"
       }
     }
-     stage('Test Slack webhook now') {
-      steps {
-        withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
-          sh '''
-            set -e
-            # Petit test de connectivité Internet/Slack
-            curl -sS https://slack.com/api/api.test >/dev/null
 
-            # Envoi + affichage de la réponse HTTP pour debug
-            payload=$(jq -nc --arg t ":rocket: Test webhook depuis ${JOB_NAME} #${BUILD_NUMBER}" \
-                           '{text:$t}')
-            curl -sS -X POST -H 'Content-type: application/json' \
-                 -d "$payload" "$SLACK_URL" \
-                 -D /tmp/slack.hdr -o /tmp/slack.out
-            echo "---- Slack headers ----"
-            cat /tmp/slack.hdr
-            echo "---- Slack body ----"
-            cat /tmp/slack.out
-          '''
-        }
-      }
-    }
-
-    stage('Daily Report') {
-      when { triggeredBy 'TimerTrigger' }   // ne tourne que sur déclenchement cron
-      steps {
-        withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
-          sh '''
-            set -e
-            payload=$(jq -nc --arg t "☀️ Daily Check: ${JOB_NAME} #${BUILD_NUMBER}" '{text:$t}')
-            curl -sS -X POST -H 'Content-type: application/json' \
-                 -d "$payload" "$SLACK_URL"
-          '''
-        }
-      }
-    }
   }
    // stages
 
-  post {
+post {
     success {
       withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
         sh '''
           set -e
-          payload=$(jq -nc --arg t "✅ SUCCESS: ${JOB_NAME} #${BUILD_NUMBER}" '{text:$t}')
-          curl -sS -X POST -H 'Content-type: application/json' -d "$payload" "$SLACK_URL"
+          # Dossier sentinelle dans le workspace (persistant entre builds)
+          mkdir -p ".notify"
+          TODAY="$(date -u +%F)"                 # ex: 2025-09-14 (UTC pour cohérence)
+          FILE=".notify/last_ok_date"
+
+          # Lire la dernière date OK (si existe)
+          LAST_OK="$( [ -f "$FILE" ] && cat "$FILE" || echo "" )"
+
+          if [ "$LAST_OK" != "$TODAY" ]; then
+            # 👉 Première réussite de la journée: on notifie et on enregistre la date
+            payload=$(jq -nc --arg t "✅ Tout va bien aujourd'hui : ${JOB_NAME} #${BUILD_NUMBER}" '{text:$t}')
+            curl -sS -X POST -H 'Content-type: application/json' -d "$payload" "$SLACK_URL"
+            echo "$TODAY" > "$FILE"
+          else
+            echo "Succès déjà notifié aujourd'hui ($TODAY). Pas d'envoi Slack."
+          fi
         '''
       }
     }
@@ -254,7 +233,8 @@ H 9 * * *''')
       withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
         sh '''
           set -e
-          payload=$(jq -nc --arg t "❌ FAILURE: ${JOB_NAME} #${BUILD_NUMBER} — check console" '{text:$t}')
+          # ⚠️ On notifie à CHAQUE échec
+          payload=$(jq -nc --arg t "❌ ÉCHEC: ${JOB_NAME} #${BUILD_NUMBER} — vérifiez la console Jenkins" '{text:$t}')
           curl -sS -X POST -H 'Content-type: application/json' -d "$payload" "$SLACK_URL"
         '''
       }
